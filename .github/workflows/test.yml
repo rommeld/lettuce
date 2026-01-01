@@ -1,0 +1,24 @@
+name: Test
+
+on:
+  workflow_run:
+    workflows: ["Code Quality"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Toolchain
+        uses: rustup show active-toolchain || rustup toolchain install
+
+      - name: Build
+        run: cargo build --tests
+
+      - name: Test
+        run: cargo test

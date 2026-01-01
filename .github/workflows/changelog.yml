@@ -1,0 +1,186 @@
+name: Lettuce Changelog
+
+on:
+  workflow_run:
+    workflows: ["Code Quality"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    # Only run if CI succeeded
+    if: github.event.workflow_run.conclusion == 'success'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Get commit message
+        id: get-commit
+        run: |
+          COMMIT_MSG=$(git log -1 --format=%B)
+          echo "message<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMIT_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          COMMIT_SHA=$(git log -1 --format=%H)
+          echo "sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+
+      - name: Check if should skip
+        id: should-skip
+        run: |
+          COMMIT_MSG="${{ steps.get-commit.outputs.message }}"
+          if echo "$COMMIT_MSG" | grep -qE '\[skip ci\]|chore: bump version|chore: update changelog'; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "Skipping: automated commit detected"
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine change type
+        id: change-type
+        if: steps.should-skip.outputs.skip != 'true'
+        run: |
+          COMMIT_MSG="${{ steps.get-commit.outputs.message }}"
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -n 1)
+          if [[ "$FIRST_LINE" =~ ^feat(\(.+\))?:|^feat: ]]; then
+            echo "type=Added" >> $GITHUB_OUTPUT
+            echo "Detected feature commit"
+          elif [[ "$FIRST_LINE" =~ ^fix(\(.+\))?:|^fix: ]]; then
+            echo "type=Fixed" >> $GITHUB_OUTPUT
+            echo "Detected fix commit"
+          elif [[ "$FIRST_LINE" =~ ^docs(\(.+\))?:|^docs: ]]; then
+            echo "type=Documentation" >> $GITHUB_OUTPUT
+            echo "Detected docs commit"
+          elif [[ "$FIRST_LINE" =~ ^perf(\(.+\))?:|^perf: ]]; then
+            echo "type=Performance" >> $GITHUB_OUTPUT
+            echo "Detected performance commit"
+          elif [[ "$FIRST_LINE" =~ ^refactor(\(.+\))?:|^refactor: ]]; then
+            echo "type=Changed" >> $GITHUB_OUTPUT
+            echo "Detected refactor commit"
+          elif [[ "$FIRST_LINE" =~ ^break(\(.+\))?!?:|^breaking(\(.+\))?!?:|^BREAKING[[:space:]]CHANGE:|^[a-z]+(\(.+\))?!: ]]; then
+            echo "type=Breaking" >> $GITHUB_OUTPUT
+            echo "is_breaking=true" >> $GITHUB_OUTPUT
+            echo "Detected breaking change commit"
+          else
+            echo "type=none" >> $GITHUB_OUTPUT
+            echo "No changelog entry needed for this commit"
+          fi
+
+      - name: Update CHANGELOG.md
+        if: steps.should-skip.outputs.skip != 'true' && steps.change-type.outputs.type != 'none'
+        run: |
+          COMMIT_MSG="${{ steps.get-commit.outputs.message }}"
+          FIRST_LINE=$(echo "$COMMIT_MSG" | head -n 1)
+          CHANGE_TYPE="${{ steps.change-type.outputs.type }}"
+          IS_BREAKING="${{ steps.change-type.outputs.is_breaking }}"
+          COMMIT_SHA="${{ steps.get-commit.outputs.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+
+          # Extract the description from commit message (remove prefix)
+          DESCRIPTION=$(echo "$FIRST_LINE" | sed -E 's/^[a-z]+(\([^)]+\))?!?:[[:space:]]*//' | sed -E 's/^BREAKING[[:space:]]CHANGE:[[:space:]]*//')
+
+          # For breaking changes, extract the body (multiline content)
+          BODY=""
+          if [ "$IS_BREAKING" = "true" ]; then
+            # Extract body: skip first line, skip empty lines after it, stop at footer markers
+            BODY=$(echo "$COMMIT_MSG" | tail -n +2 | sed '/^$/d; /^[A-Z][A-Za-z-]*:[[:space:]]/,$d; /^Signed-off-by:/,$d; /^Co-authored-by:/,$d')
+          fi
+
+          # Create CHANGELOG.md if it doesn't exist
+          if [ ! -f CHANGELOG.md ]; then
+            cat > CHANGELOG.md << 'EOF'
+          # Changelog
+
+          All notable changes to this project will be documented in this file.
+
+
+          ## [Unreleased]
+
+          EOF
+          fi
+
+          # Ensure Unreleased section exists
+          if ! grep -q "^## \[Unreleased\]" CHANGELOG.md; then
+            # Find the first version entry or end of header
+            if grep -q "^## \[" CHANGELOG.md; then
+              LINE_NUM=$(grep -n "^## \[" CHANGELOG.md | head -1 | cut -d: -f1)
+              head -n $((LINE_NUM - 1)) CHANGELOG.md > /tmp/changelog_new.md
+              echo "## [Unreleased]" >> /tmp/changelog_new.md
+              echo "" >> /tmp/changelog_new.md
+              tail -n +$LINE_NUM CHANGELOG.md >> /tmp/changelog_new.md
+              mv /tmp/changelog_new.md CHANGELOG.md
+            else
+              echo "" >> CHANGELOG.md
+              echo "## [Unreleased]" >> CHANGELOG.md
+              echo "" >> CHANGELOG.md
+            fi
+          fi
+
+          # Find line number of Unreleased section
+          UNRELEASED_LINE=$(grep -n "^## \[Unreleased\]" CHANGELOG.md | cut -d: -f1)
+
+          # Check if the subsection already exists under Unreleased
+          # Find the next ## section to determine the boundary
+          NEXT_VERSION_LINE=$(tail -n +$((UNRELEASED_LINE + 1)) CHANGELOG.md | grep -n "^## \[" | head -1 | cut -d: -f1)
+          if [ -z "$NEXT_VERSION_LINE" ]; then
+            NEXT_VERSION_LINE=99999
+          else
+            NEXT_VERSION_LINE=$((UNRELEASED_LINE + NEXT_VERSION_LINE))
+          fi
+
+          # Check if subsection exists within Unreleased section
+          SUBSECTION_LINE=$(awk -v start="$UNRELEASED_LINE" -v end="$NEXT_VERSION_LINE" -v section="### $CHANGE_TYPE" \
+            'NR > start && NR < end && $0 == section {print NR; exit}' CHANGELOG.md)
+
+          # Build the changelog entry
+          if [ "$IS_BREAKING" = "true" ] && [ -n "$BODY" ]; then
+            # Multiline entry for breaking changes with body content
+            ENTRY="- $DESCRIPTION ($SHORT_SHA)"
+            # Indent each line of body with 2 spaces for proper markdown nesting
+            INDENTED_BODY=$(echo "$BODY" | sed 's/^/  /')
+            FULL_ENTRY="$ENTRY
+          $INDENTED_BODY"
+          else
+            # Single line entry
+            FULL_ENTRY="- $DESCRIPTION ($SHORT_SHA)"
+          fi
+
+          if [ -n "$SUBSECTION_LINE" ]; then
+            # Subsection exists, add entry after it
+            head -n "$SUBSECTION_LINE" CHANGELOG.md > /tmp/changelog_new.md
+            echo "" >> /tmp/changelog_new.md
+            echo "$FULL_ENTRY" >> /tmp/changelog_new.md
+            tail -n +$((SUBSECTION_LINE + 1)) CHANGELOG.md | tail -n +2 >> /tmp/changelog_new.md
+            mv /tmp/changelog_new.md CHANGELOG.md
+          else
+            # Subsection doesn't exist, create it after Unreleased header
+            head -n "$UNRELEASED_LINE" CHANGELOG.md > /tmp/changelog_new.md
+            echo "" >> /tmp/changelog_new.md
+            echo "### $CHANGE_TYPE" >> /tmp/changelog_new.md
+            echo "" >> /tmp/changelog_new.md
+            echo "$FULL_ENTRY" >> /tmp/changelog_new.md
+            tail -n +$((UNRELEASED_LINE + 1)) CHANGELOG.md >> /tmp/changelog_new.md
+            mv /tmp/changelog_new.md CHANGELOG.md
+          fi
+
+      - name: Commit changelog update
+        if: steps.should-skip.outputs.skip != 'true' && steps.change-type.outputs.type != 'none'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Only commit if there are changes
+          if git diff --quiet CHANGELOG.md; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git add CHANGELOG.md
+          git commit -m "chore: update changelog [skip ci]"
+          # Push to main branch (we're in detached HEAD from workflow_run)
+          git push origin HEAD:main
