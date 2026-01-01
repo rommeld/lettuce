@@ -1,0 +1,9 @@
+[package]
+name = "lettuce"
+version = "0.1.0"
+authors = ["Denny Rommel <rommel.denny@gmail.com>"]
+edition = "2024"
+description = "Fast terminal emulator"
+license = "MIT"
+
+[dependencies]
