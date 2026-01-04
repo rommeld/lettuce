@@ -15,10 +15,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Toolchain
-        uses: rustup show active-toolchain || rustup toolchain install
-
-      - name: Build
-        run: cargo build --tests
+        uses: dtolnay/rust-toolchain@stablel
 
       - name: Test
         run: cargo test
