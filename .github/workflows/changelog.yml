@@ -2,7 +2,7 @@ name: Lettuce Changelog
 
 on:
   workflow_run:
-    workflows: ["Code Quality"]
+    workflows: ["Test"]
     types: [completed]
     branches: [main]
 
