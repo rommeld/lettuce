@@ -14,19 +14,38 @@ fn main() -> Result<()> {
         pixel_height: 0,
     })?;
 
-    let cmd = CommandBuilder::new("/bin/bash");
-    let _child = pair.slave.spawn_command(cmd)?;
+    let mut cmd = CommandBuilder::new("/bin/zsh");
+    cmd.args(["-i", "--no-rcs"]);
+    cmd.env("TERM", "dumb");
+
+    let mut child = pair.slave.spawn_command(cmd)?;
 
     let mut reader = pair.master.try_clone_reader()?;
     let mut writer = pair.master.take_writer()?;
+
+    let mut buffer = [0u8; 4096];
+
+    // Wait for shell to initialize
+    thread::sleep(Duration::from_millis(100));
+    let n = reader.read(&mut buffer[..])?;
+    eprintln!("{:?}", String::from_utf8_lossy(&buffer[..n]));
+
     writeln!(writer, "echo hello")?;
     writer.flush()?;
 
-    thread::sleep(Duration::from_millis(200));
+    thread::sleep(Duration::from_millis(500));
+    let n = reader.read(&mut buffer[..])?;
+    eprintln!("{:?}", String::from_utf8_lossy(&buffer[..n]));
 
-    let mut buffer = [0u8; 4096];
-    let n = reader.read(&mut buffer)?;
-    print!("{}", String::from_utf8_lossy(&buffer[..n]));
+    // TODO: 'read()' blocks
+    thread::sleep(Duration::from_millis(500));
+    let n = reader.read(&mut buffer[..])?;
+    eprintln!("{:?}", String::from_utf8_lossy(&buffer[..n]));
+
+    writeln!(writer, "exit")?;
+    writer.flush()?;
+
+    let _ = child.wait()?;
 
     Ok(())
 }
