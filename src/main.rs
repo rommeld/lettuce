@@ -332,6 +332,24 @@ impl Terminal {
             cols,
         }
     }
+    
+    fn print(&mut self, c: char, attrs: Attributes) {
+        self.grid[self.cursor.row][self.cursor.col] = Cell {
+            character: c,
+            attrs,
+        };
+        
+        self.cursor.col += 1;
+        
+        if self.cursor.col >= self.cols {
+            self.cursor.col = 0;
+            self.cursor.row += 1;
+            
+            if self.cursor.row >= self.rows {
+                self.cursor.row = self.rows -1;
+            }
+        }
+    }
 
     fn render_to_string(&self) -> String {
         let mut output = String::new();
