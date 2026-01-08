@@ -5,10 +5,7 @@ use std::thread;
 use std::time::Duration;
 use vte::{Params, Parser, Perform};
 
-struct TerminalParser {
-    current_attrs: Attributes,
-    events: Vec<TerminalEvent>,
-}
+// Session 2 Part 1 - Color, Attributes, Events
 
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 enum Color {
@@ -70,6 +67,13 @@ enum TerminalEvent {
     UnhandledCsi { action: char, params: Vec<u16> },
     UnhandledEsc(u8),
     Osc(Vec<Vec<u8>>),
+}
+
+// Session 2 Part 2 - Parser
+
+struct TerminalParser {
+    current_attrs: Attributes,
+    events: Vec<TerminalEvent>,
 }
 
 impl TerminalParser {
@@ -279,60 +283,93 @@ impl Perform for TerminalParser {
     fn unhook(&mut self) {}
 }
 
-fn main() -> Result<()> {
-    let pty_system = native_pty_system();
+// Session 3 - Terminal State Types
 
-    let pair = pty_system.openpty(PtySize {
-        rows: 24,
-        cols: 80,
-        pixel_width: 0,
-        pixel_height: 0,
-    })?;
+#[derive(Debug, Clone)]
+struct Cell {
+    character: char,
+    attrs: Attributes,
+}
 
-    let mut cmd = CommandBuilder::new("/bin/bash");
-    cmd.args(["--norc", "--noprofile", "-i"]);
-    let mut child = pair.slave.spawn_command(cmd)?;
-
-    let mut reader = pair.master.try_clone_reader()?;
-    let mut writer = pair.master.take_writer()?;
-
-    let mut vte_parser = Parser::new();
-    let mut handler = TerminalParser::new();
-
-    writeln!(writer, "echo -e '\\033[1;31mBOLD RED\\033[0m'")?;
-    writer.flush()?;
-    thread::sleep(Duration::from_millis(200));
-
-    let mut buffer = [0u8; 4096];
-    let n = reader.read(&mut buffer)?;
-
-    vte_parser.advance(&mut handler, &buffer[..n]);
-
-    println!("=== Parsed output ({} byres) ===", handler.events.len());
-    for (i, event) in handler.events.iter().enumerate() {
-        match event {
-            TerminalEvent::Print { char, attrs } => {
-                let color_info = if attrs.foreground != Color::Default {
-                    format!("(fg={:?})", attrs.foreground)
-                } else {
-                    String::new()
-                };
-                let bold_info = if attrs.bold { "BOLD" } else { "" };
-                println!("{:3}: Print {} {} {}", i, char, color_info, bold_info);
-            }
-            TerminalEvent::Linefeed => println!("{:3}: Linefeed", i),
-            TerminalEvent::SetMode(modes) => println!("{:3}: SetMode {:?}", i, modes),
-            TerminalEvent::ResetMode(modes) => println!("{:3}: ResetMode {:?}", i, modes),
-            other => println!("{:3}: {:?}", i, other),
+impl Default for Cell {
+    fn default() -> Self {
+        Cell {
+            character: ' ',
+            attrs: Attributes::default(),
         }
     }
-    println!("=== End ===");
-    println!();
-    println!("Final current_attrs: {:?}", handler.current_attrs);
+}
 
-    writeln!(writer, "exit")?;
-    writer.flush()?;
-    child.wait()?;
+#[derive(Debug, Clone)]
+struct Cursor {
+    row: usize,
+    col: usize,
+}
+
+impl Default for Cursor {
+    fn default() -> Self {
+        Cursor { row: 0, col: 0 }
+    }
+}
+
+struct Terminal {
+    grid: Vec<Vec<Cell>>,
+    cursor: Cursor,
+    rows: usize,
+    cols: usize,
+}
+
+impl Terminal {
+    fn new(cols: usize, rows: usize) -> Self {
+        let grid = (0..rows)
+            .map(|_| (0..cols).map(|_| Cell::default()).collect())
+            .collect();
+
+        Terminal {
+            grid,
+            cursor: Cursor::default(),
+            rows,
+            cols,
+        }
+    }
+
+    fn render_to_string(&self) -> String {
+        let mut output = String::new();
+        for row in &self.grid {
+            for cell in row {
+                output.push(cell.character)
+            }
+            output.push('\n')
+        }
+        output
+    }
+}
+
+// Session 3 - Implement Tests in main()
+
+fn main() -> Result<()> {
+    let terminal = Terminal::new(80, 24);
+
+    println!("Dimensions {} cols x {} rows", terminal.cols, terminal.rows);
+    println!("Grid {} rows", terminal.grid.len());
+    println!("Each row has {} cells", terminal.grid[0].len());
+    println!("Cursor at row {} and column {}", terminal.cursor.row, terminal.cursor.col);
+
+    let cell = &terminal.grid[0][0];
+    println!("character {}", cell.character);
+    println!("foreground {:?}", cell.attrs.foreground);
+    println!("background {:?}", cell.attrs.background);
+    println!("bold {}", cell.attrs.bold);
+
+    println!("First 3 rows of rendered grid.");
+    let rendered = terminal.render_to_string();
+    for (i, line) in rendered.lines().take(3).enumerate() {
+        let visible: String = line
+            .chars()
+            .map(|c| if c == ' ' { '.' } else { c })
+            .collect();
+        println!("{} {}[end]", i, &visible[..20]);
+    }
 
     Ok(())
 }
