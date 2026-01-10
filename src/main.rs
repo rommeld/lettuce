@@ -332,21 +332,21 @@ impl Terminal {
             cols,
         }
     }
-    
+
     fn print(&mut self, c: char, attrs: Attributes) {
         self.grid[self.cursor.row][self.cursor.col] = Cell {
             character: c,
             attrs,
         };
-        
+
         self.cursor.col += 1;
-        
+
         if self.cursor.col >= self.cols {
             self.cursor.col = 0;
             self.cursor.row += 1;
-            
+
             if self.cursor.row >= self.rows {
-                self.cursor.row = self.rows -1;
+                self.cursor.row = self.rows - 1;
             }
         }
     }
@@ -361,32 +361,58 @@ impl Terminal {
         }
         output
     }
+
+    fn debug_render(&self) -> String {
+        let mut output = String::new();
+
+        for (row_idx, row) in self.grid.iter().enumerate() {
+            for (col_idx, cell) in row.iter().enumerate() {
+                if row_idx == self.cursor.row && col_idx == self.cursor.col {
+                    output.push('[');
+                    output.push(cell.character);
+                    output.push(']');
+                } else {
+                    output.push(cell.character);
+                }
+            }
+            output.push('\n');
+        }
+
+        output.push_str(&format!(
+            "Cursor: row={}, col={}\n",
+            self.cursor.row, self.cursor.col
+        ));
+
+        output
+    }
 }
 
-// Session 3 - Implement Tests in main()
-
 fn main() -> Result<()> {
-    let terminal = Terminal::new(80, 24);
+    let mut terminal = Terminal::new(80, 24);
 
-    println!("Dimensions {} cols x {} rows", terminal.cols, terminal.rows);
-    println!("Grid {} rows", terminal.grid.len());
-    println!("Each row has {} cells", terminal.grid[0].len());
-    println!("Cursor at row {} and column {}", terminal.cursor.row, terminal.cursor.col);
+    let hello = "Hello";
+    for c in hello.chars() {
+        terminal.print(c, Attributes::default());
+    }
+    println!(
+        "Grid[0][..5] '{}{}{}{}{}'",
+        terminal.grid[0][0].character,
+        terminal.grid[0][1].character,
+        terminal.grid[0][2].character,
+        terminal.grid[0][3].character,
+        terminal.grid[0][4].character,
+    );
+    println!(
+        "Cursor after 'Hello' row {} and column {}",
+        terminal.cursor.row, terminal.cursor.col
+    );
 
-    let cell = &terminal.grid[0][0];
-    println!("character {}", cell.character);
-    println!("foreground {:?}", cell.attrs.foreground);
-    println!("background {:?}", cell.attrs.background);
-    println!("bold {}", cell.attrs.bold);
-
-    println!("First 3 rows of rendered grid.");
-    let rendered = terminal.render_to_string();
-    for (i, line) in rendered.lines().take(3).enumerate() {
-        let visible: String = line
-            .chars()
-            .map(|c| if c == ' ' { '.' } else { c })
-            .collect();
-        println!("{} {}[end]", i, &visible[..20]);
+    let red_attrs = Attributes {
+        foreground: Color::Red,
+        ..Attributes::default()
+    };
+    for c in " World".chars() {
+        terminal.print(c, red_attrs.clone());
     }
 
     Ok(())
