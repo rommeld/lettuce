@@ -1,21 +1,17 @@
 name: Test
 
 on:
-  workflow_run:
-    workflows: ["Code Quality"]
-    types: [completed]
-    branches: [main]
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
   test:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Test
-        run: cargo test
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --all-features

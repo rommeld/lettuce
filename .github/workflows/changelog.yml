@@ -1,8 +1,8 @@
-name: Lettuce Changelog
+name: Changelog
 
 on:
   workflow_run:
-    workflows: ["Test"]
+    workflows: ["CI"]
     types: [completed]
     branches: [main]
 
