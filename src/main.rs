@@ -482,14 +482,14 @@ impl Terminal {
             | TerminalEvent::Osc(_) => {}
         }
     }
-    
+
     fn process_events(&mut self, events: &[TerminalEvent]) {
         for event in events {
             self.process_event(event);
         }
     }
 
-    fn render_to_string(&self) -> String {
+    fn render_content(&self) -> String {
         let mut output = String::new();
         for row in &self.grid {
             for cell in row {
@@ -526,95 +526,50 @@ impl Terminal {
 }
 
 fn main() -> Result<()> {
-    println!("=== Control Character Test ===\n");
+    println!("=== Full Integration Test ===\n");
 
-    let mut terminal = Terminal::new(20, 5);
+    // Set up PTY and spawn shell
+    let pty_system = native_pty_system();
+    let pair = pty_system.openpty(PtySize {
+        rows: 24,
+        cols: 80,
+        pixel_width: 0,
+        pixel_height: 0,
+    })?;
 
-    // Test 1: Carriage Return
-    println!("Test 1: Carriage Return");
-    for c in "Hello".chars() {
-        terminal.print(c, Attributes::default());
-    }
-    println!("  After 'Hello': cursor at col={}", terminal.cursor.col);
+    let mut cmd = CommandBuilder::new("/bin/bash");
+    cmd.args(&["--norc", "--noprofile", "-i"]);
+    let mut child = pair.slave.spawn_command(cmd)?;
 
-    terminal.carriage_return();
-    println!("  After CR: cursor at col={}", terminal.cursor.col);
+    let mut reader = pair.master.try_clone_reader()?;
+    let mut writer = pair.master.take_writer()?;
 
-    for c in "AAAAA".chars() {
-        terminal.print(c, Attributes::default());
-    }
-    println!(
-        "  Row 0 after overwriting: '{}'",
-        terminal.grid[0]
-            .iter()
-            .map(|c| c.character)
-            .collect::<String>()
-            .trim_end()
-    );
-    println!();
+    // Set up parser and terminal
+    let mut vte_parser = vte::Parser::new();
+    let mut handler = Parser::new();
+    let mut terminal = Terminal::new(80, 24);
 
-    // Test 2: Line Feed
-    println!("Test 2: Line Feed");
-    terminal.set_cursor_position(1, 5);
-    println!("  Starting at row=0, col=4");
+    // Send a command
+    writeln!(writer, "echo 'Hello, Terminal World!'")?;
+    writer.flush()?;
+    thread::sleep(Duration::from_millis(200));
 
-    terminal.line_feed();
-    println!(
-        "  After LF: row={}, col={}",
-        terminal.cursor.row, terminal.cursor.col
-    );
+    // Read and parse output
+    let mut buffer = [0u8; 4096];
+    let n = reader.read(&mut buffer)?;
 
-    for c in "NEW LINE".chars() {
-        terminal.print(c, Attributes::default());
-    }
-    println!();
+    vte_parser.advance(&mut handler, &buffer[..n]);
+    terminal.process_events(&handler.events);
 
-    // Test 3: Tab stops
-    println!("Test 3: Tab stops (every 8 columns)");
-    let mut term2 = Terminal::new(40, 1);
-    println!("  Starting at col=0");
+    // Display results
+    println!("Terminal state:");
+    println!("{}", terminal.render_content());
 
-    term2.tab();
-    println!("  After tab: col={}", term2.cursor.col);
+    // Cleanup
+    writeln!(writer, "exit")?;
+    writer.flush()?;
+    child.wait()?;
 
-    term2.cursor.col = 5;
-    println!("  Move to col=5");
-    term2.tab();
-    println!("  After tab: col={}", term2.cursor.col);
-
-    term2.cursor.col = 8;
-    println!("  Move to col=8");
-    term2.tab();
-    println!("  After tab: col={}", term2.cursor.col);
-    println!();
-
-    // Test 4: Backspace
-    println!("Test 4: Backspace");
-    let mut term3 = Terminal::new(20, 1);
-    for c in "ABCDE".chars() {
-        term3.print(c, Attributes::default());
-    }
-    println!("  After 'ABCDE': cursor at col={}", term3.cursor.col);
-
-    term3.backspace();
-    println!("  After backspace: cursor at col={}", term3.cursor.col);
-
-    term3.print('X', Attributes::default());
-    println!(
-        "  After printing 'X': row shows '{}'",
-        term3.grid[0]
-            .iter()
-            .map(|c| c.character)
-            .collect::<String>()
-            .trim_end()
-    );
-    println!();
-
-    // Show the first terminal's final state
-    println!("Final grid state:");
-    println!("{}", terminal.debug_render());
-
-    println!("Control characters are working correctly!");
-
+    println!("Full pipeline test complete!");
     Ok(())
 }
