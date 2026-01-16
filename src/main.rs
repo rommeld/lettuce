@@ -377,6 +377,65 @@ impl Terminal {
         self.cursor.col = self.cursor.col.saturating_sub(1);
     }
 
+    fn clear_cell(&mut self, row: usize, col: usize) {
+        self.grid[row][col] = Cell::default();
+    }
+
+    fn erase_display(&mut self, mode: u16) {
+        match mode {
+            0 => {
+                for col in self.cursor.col..self.cols {
+                    self.clear_cell(self.cursor.row, col);
+                }
+                for row in (self.cursor.row + 1)..self.rows {
+                    for col in 0..self.cols {
+                        self.clear_cell(row, col);
+                    }
+                }
+            }
+            1 => {
+                for row in 0..self.cursor.row {
+                    for col in 0..self.cols {
+                        self.clear_cell(row, col);
+                    }
+                }
+                for col in 0..=self.cursor.col {
+                    self.clear_cell(self.cursor.row, col);
+                }
+            }
+            2 | 3 => {
+                for row in 0..self.rows {
+                    for col in 0..self.cols {
+                        self.clear_cell(row, col);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn erase_line(&mut self, mode: u16) {
+        let row = self.cursor.row;
+        match mode {
+            0 => {
+                for col in self.cursor.col..self.cols {
+                    self.clear_cell(row, col);
+                }
+            }
+            1 => {
+                for col in 0..=self.cursor.col {
+                    self.clear_cell(row, col);
+                }
+            }
+            2 => {
+                for col in 0..self.cols {
+                    self.clear_cell(row, col);
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn render_to_string(&self) -> String {
         let mut output = String::new();
         for row in &self.grid {
