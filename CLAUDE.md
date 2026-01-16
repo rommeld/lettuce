@@ -1,8 +1,8 @@
-## Project Abstract
+# Project Abstract
 
 **Building a GPU-accelerated terminal emulator in Rust using GPUI (Zed's rendering framework).** The architecture follows Ghostty's core design patterns—VT parser state machine, efficient cell buffers, and PTY abstraction—while leveraging GPUI's unified rendering layer to avoid the cross-platform UI complexity of native toolkits.
 
-## Commands
+# Commands
 
 | Command                 | Purpose                                                                 |
 | ----------------------- | ----------------------------------------------------------------------- |
@@ -18,7 +18,7 @@
 | `cargo update`          | Update dependencies to newest compatible versions per Cargo.toml        |
 | `cargo check`           | Fast compile check without producing binaries—useful during development |
 
-## Rust Pattern
+# Code Style
 
 - **Leverage the type system for correctness**: Use enums for state machines where variants are mutually exclusive. Use the newtype pattern (struct Miles(f64)) to enforce semantic distinctions at compile time. Prefer typestate patterns to make invalid states unrepresentable—methods only exist on valid state types.
 - **Design traits intentionally**: Use associated types when there's one natural implementation per type; use generics when multiple implementations make sense. Keep traits object-safe when `dyn Trait` flexibility is needed (no -> Self returns, no generic methods).
@@ -30,3 +30,9 @@
 - **Use** `pub use` **sparingly**: Reserve re-exports for exposing dependencies so downstream consumers don't need direct dependencies—avoid it for internal module organization.
 - **Avoid global state**: Skip `lazy_static!`, `OnceCell`, or similar patterns; prefer passing explicit context for shared state to keep dependencies visible and testing straightforward.
 - **Keep dependencies current**: Regularly update to the newest crate versions to benefit from bug fixes, performance improvements, and security patches.
+
+# Workflow
+
+- Always run `cargo clippy` and fix potential lints.
+- Before implementing code write tasks and specifications in `/specs/` folder. Use relatable file names.
+- Write tests while implementing features to validate intentional behavior. Follow **Code Style** as defined above.

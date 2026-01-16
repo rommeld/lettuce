@@ -3,7 +3,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 use std::thread;
 use std::time::Duration;
-use vte::{Params, Parser, Perform};
+use vte::{Params, Perform};
 
 // Session 2 Part 1 - Color, Attributes, Events
 
@@ -41,12 +41,6 @@ struct Attributes {
     inverse: bool,
 }
 
-impl Attributes {
-    fn reset(&mut self) {
-        *self = Attributes::default();
-    }
-}
-
 #[derive(Debug, Clone)]
 enum TerminalEvent {
     Print { char: char, attrs: Attributes },
@@ -71,14 +65,14 @@ enum TerminalEvent {
 
 // Session 2 Part 2 - Parser
 
-struct TerminalParser {
+struct Parser {
     current_attrs: Attributes,
     events: Vec<TerminalEvent>,
 }
 
-impl TerminalParser {
+impl Parser {
     fn new() -> Self {
-        TerminalParser {
+        Parser {
             current_attrs: Attributes::default(),
             events: Vec::new(),
         }
@@ -144,12 +138,7 @@ impl TerminalParser {
     }
 }
 
-// Implementation
-// Zero allocation: references internal buffers, not structs
-// Streaming: buffer after complete chunk. Parser tracks state across multiple advances.
-// Flexibility: handler decides process:
-// print character, collect events into queue, update grid
-impl Perform for TerminalParser {
+impl Perform for Parser {
     fn print(&mut self, c: char) {
         self.events.push(TerminalEvent::Print {
             char: c,
@@ -169,8 +158,6 @@ impl Perform for TerminalParser {
         self.events.push(event);
     }
 
-    // CSI (Control Sequence Introducer)
-    // CSI sequence has the following structure: ESC[ <parameter> <final byte>
     fn csi_dispatch(&mut self, params: &Params, _intermediates: &[u8], ignore: bool, action: char) {
         if ignore {
             return;
@@ -379,7 +366,7 @@ impl Terminal {
         }
 
         output.push_str(&format!(
-            "Cursor: row={}, col={}\n",
+            "Cursor: row={} col={}\n",
             self.cursor.row, self.cursor.col
         ));
 
@@ -388,14 +375,18 @@ impl Terminal {
 }
 
 fn main() -> Result<()> {
+    println!("=== Character Printing Test ===\n");
+
     let mut terminal = Terminal::new(80, 24);
 
+    // Test 1: Print a simple string
+    println!("Test 1: Print 'Hello'");
     let hello = "Hello";
     for c in hello.chars() {
         terminal.print(c, Attributes::default());
     }
     println!(
-        "Grid[0][..5] '{}{}{}{}{}'",
+        "  Grid[0][0..5]: '{}{}{}{}{}'",
         terminal.grid[0][0].character,
         terminal.grid[0][1].character,
         terminal.grid[0][2].character,
@@ -403,10 +394,13 @@ fn main() -> Result<()> {
         terminal.grid[0][4].character,
     );
     println!(
-        "Cursor after 'Hello' row {} and column {}",
+        "  Cursor after 'Hello': row={}, col={}",
         terminal.cursor.row, terminal.cursor.col
     );
+    println!();
 
+    // Test 2: Print with color attributes
+    println!("Test 2: Print ' World' in red");
     let red_attrs = Attributes {
         foreground: Color::Red,
         ..Attributes::default()
@@ -414,6 +408,62 @@ fn main() -> Result<()> {
     for c in " World".chars() {
         terminal.print(c, red_attrs.clone());
     }
+    println!("  Cell at [0][6] (the 'W'):");
+    println!("    character: '{}'", terminal.grid[0][6].character);
+    println!("    foreground: {:?}", terminal.grid[0][6].attrs.foreground);
+    println!(
+        "  Cursor after ' World': row={}, col={}",
+        terminal.cursor.row, terminal.cursor.col
+    );
+    println!();
+
+    // Test 3: Test line wrapping
+    println!("Test 3: Line wrapping");
+    let mut terminal2 = Terminal::new(10, 3); // Small terminal: 10 cols, 3 rows
+
+    // Print 25 characters - should wrap to rows 0, 1, 2
+    for i in 0..25 {
+        let c = (b'A' + (i % 26) as u8) as char;
+        terminal2.print(c, Attributes::default());
+    }
+
+    println!("  Printed 25 chars in a 10x3 terminal:");
+    println!(
+        "  Row 0: '{}'",
+        terminal2.grid[0]
+            .iter()
+            .map(|c| c.character)
+            .collect::<String>()
+    );
+    println!(
+        "  Row 1: '{}'",
+        terminal2.grid[1]
+            .iter()
+            .map(|c| c.character)
+            .collect::<String>()
+    );
+    println!(
+        "  Row 2: '{}'",
+        terminal2.grid[2]
+            .iter()
+            .map(|c| c.character)
+            .collect::<String>()
+    );
+    println!(
+        "  Cursor position: row={}, col={}",
+        terminal2.cursor.row, terminal2.cursor.col
+    );
+    println!();
+
+    // Test 4: Show debug render
+    println!("Test 4: Debug render (cursor shown as [X]):");
+    let mut terminal3 = Terminal::new(20, 3);
+    for c in "Hello, Terminal!".chars() {
+        terminal3.print(c, Attributes::default());
+    }
+    println!("{}", terminal3.debug_render());
+
+    println!("Character printing is working correctly!");
 
     Ok(())
 }
