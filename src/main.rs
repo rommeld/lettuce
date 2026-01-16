@@ -436,6 +436,59 @@ impl Terminal {
         }
     }
 
+    fn process_event(&mut self, event: &TerminalEvent) {
+        match event {
+            TerminalEvent::Print { char, attrs } => {
+                self.print(*char, attrs.clone());
+            }
+            TerminalEvent::Linefeed => {
+                self.line_feed();
+            }
+            TerminalEvent::CarriageReturn => {
+                self.carriage_return();
+            }
+            TerminalEvent::Backspace => {
+                self.backspace();
+            }
+            TerminalEvent::Tab => {
+                self.tab();
+            }
+            TerminalEvent::Bell => {}
+            TerminalEvent::CursorPosition { row, col } => {
+                self.set_cursor_position(*row, *col);
+            }
+            TerminalEvent::CursorUp(n) => {
+                self.cursor_up(*n);
+            }
+            TerminalEvent::CursorDown(n) => {
+                self.cursor_down(*n);
+            }
+            TerminalEvent::CursorForward(n) => {
+                self.cursor_forward(*n);
+            }
+            TerminalEvent::CursorBack(n) => {
+                self.cursor_back(*n);
+            }
+            TerminalEvent::EraseDisplay(mode) => {
+                self.erase_display(*mode);
+            }
+            TerminalEvent::EraseLine(mode) => {
+                self.erase_line(*mode);
+            }
+            TerminalEvent::SetMode(_)
+            | TerminalEvent::ResetMode(_)
+            | TerminalEvent::UnhandledCsi { .. }
+            | TerminalEvent::UnhandledEsc(_)
+            | TerminalEvent::Osc(_) => {}
+        }
+    }
+    
+    fn process_events(&mut self, events: &[TerminalEvent]) {
+        for event in events {
+            self.process_event(event);
+        }
+    }
+
     fn render_to_string(&self) -> String {
         let mut output = String::new();
         for row in &self.grid {
