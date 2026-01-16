@@ -338,6 +338,30 @@ impl Terminal {
         }
     }
 
+    fn set_cursor_position(&mut self, row: u16, col: u16) {
+        let row = if row == 0 { 1 } else { row };
+        let col = if col == 0 { 1 } else { col };
+
+        self.cursor.row = ((row - 1) as usize).min(self.rows - 1);
+        self.cursor.col = ((col - 1) as usize).min(self.cols - 1);
+    }
+
+    fn cursor_up(&mut self, n: u16) {
+        self.cursor.row = self.cursor.row.saturating_sub(n as usize);
+    }
+
+    fn cursor_down(&mut self, n: u16) {
+        self.cursor.row = (self.cursor.row + n as usize).min(self.rows - 1);
+    }
+
+    fn cursor_forward(&mut self, n: u16) {
+        self.cursor.col = (self.cursor.col + n as usize).min(self.cols - 1);
+    }
+
+    fn cursor_back(&mut self, n: u16) {
+        self.cursor.col = self.cursor.col.saturating_sub(n as usize);
+    }
+
     fn render_to_string(&self) -> String {
         let mut output = String::new();
         for row in &self.grid {
@@ -375,95 +399,100 @@ impl Terminal {
 }
 
 fn main() -> Result<()> {
-    println!("=== Character Printing Test ===\n");
+    println!("=== Cursor Movement Test ===\n");
 
-    let mut terminal = Terminal::new(80, 24);
+    // Use a small terminal for easier visualization
+    let mut terminal = Terminal::new(20, 5);
 
-    // Test 1: Print a simple string
-    println!("Test 1: Print 'Hello'");
-    let hello = "Hello";
-    for c in hello.chars() {
-        terminal.print(c, Attributes::default());
-    }
+    // Test 1: Absolute positioning (1-based coordinates)
+    println!("Test 1: Absolute positioning");
+    println!("  set_cursor_position(3, 5) - should go to row 2, col 4 (0-based)");
+    terminal.set_cursor_position(3, 5);
     println!(
-        "  Grid[0][0..5]: '{}{}{}{}{}'",
-        terminal.grid[0][0].character,
-        terminal.grid[0][1].character,
-        terminal.grid[0][2].character,
-        terminal.grid[0][3].character,
-        terminal.grid[0][4].character,
+        "  Cursor: row={}, col={}",
+        terminal.cursor.row, terminal.cursor.col
     );
+
+    // Print something at that position
+    terminal.print('X', Attributes::default());
+    println!("  Printed 'X' at that position");
+    println!();
+
+    // Test 2: Home position (0,0 or 1,1 in 1-based)
+    println!("Test 2: Home position");
+    println!("  set_cursor_position(1, 1) - should go to row 0, col 0");
+    terminal.set_cursor_position(1, 1);
     println!(
-        "  Cursor after 'Hello': row={}, col={}",
+        "  Cursor: row={}, col={}",
+        terminal.cursor.row, terminal.cursor.col
+    );
+    terminal.print('H', Attributes::default());
+    println!();
+
+    // Test 3: Zero values treated as 1
+    println!("Test 3: Zero values treated as 1");
+    println!("  set_cursor_position(0, 0) - should also go to row 0, col 0");
+    terminal.set_cursor_position(0, 0);
+    println!(
+        "  Cursor: row={}, col={}",
         terminal.cursor.row, terminal.cursor.col
     );
     println!();
 
-    // Test 2: Print with color attributes
-    println!("Test 2: Print ' World' in red");
-    let red_attrs = Attributes {
-        foreground: Color::Red,
-        ..Attributes::default()
-    };
-    for c in " World".chars() {
-        terminal.print(c, red_attrs.clone());
-    }
-    println!("  Cell at [0][6] (the 'W'):");
-    println!("    character: '{}'", terminal.grid[0][6].character);
-    println!("    foreground: {:?}", terminal.grid[0][6].attrs.foreground);
+    // Test 4: Out of bounds clamping
+    println!("Test 4: Out of bounds clamping");
+    println!("  set_cursor_position(100, 100) - should clamp to row 4, col 19");
+    terminal.set_cursor_position(100, 100);
     println!(
-        "  Cursor after ' World': row={}, col={}",
+        "  Cursor: row={}, col={}",
         terminal.cursor.row, terminal.cursor.col
     );
+    terminal.print('C', Attributes::default());
     println!();
 
-    // Test 3: Test line wrapping
-    println!("Test 3: Line wrapping");
-    let mut terminal2 = Terminal::new(10, 3); // Small terminal: 10 cols, 3 rows
+    // Test 5: Relative movement - down and right
+    println!("Test 5: Relative movement from home");
+    terminal.set_cursor_position(1, 1); // Start at home
+    println!("  Starting at row=0, col=0");
 
-    // Print 25 characters - should wrap to rows 0, 1, 2
-    for i in 0..25 {
-        let c = (b'A' + (i % 26) as u8) as char;
-        terminal2.print(c, Attributes::default());
-    }
+    terminal.cursor_down(2);
+    println!(
+        "  cursor_down(2): row={}, col={}",
+        terminal.cursor.row, terminal.cursor.col
+    );
 
-    println!("  Printed 25 chars in a 10x3 terminal:");
+    terminal.cursor_forward(5);
     println!(
-        "  Row 0: '{}'",
-        terminal2.grid[0]
-            .iter()
-            .map(|c| c.character)
-            .collect::<String>()
+        "  cursor_forward(5): row={}, col={}",
+        terminal.cursor.row, terminal.cursor.col
     );
+
+    terminal.print('D', Attributes::default());
+    println!();
+
+    // Test 6: Relative movement - up and left with clamping
+    println!("Test 6: Relative movement with clamping");
+    terminal.set_cursor_position(2, 5); // Row 1, col 4
+    println!("  Starting at row=1, col=4");
+
+    terminal.cursor_up(10); // Try to go way up - should clamp to 0
     println!(
-        "  Row 1: '{}'",
-        terminal2.grid[1]
-            .iter()
-            .map(|c| c.character)
-            .collect::<String>()
+        "  cursor_up(10): row={} (clamped to 0)",
+        terminal.cursor.row
     );
+
+    terminal.cursor_back(10); // Try to go way left - should clamp to 0
     println!(
-        "  Row 2: '{}'",
-        terminal2.grid[2]
-            .iter()
-            .map(|c| c.character)
-            .collect::<String>()
-    );
-    println!(
-        "  Cursor position: row={}, col={}",
-        terminal2.cursor.row, terminal2.cursor.col
+        "  cursor_back(10): col={} (clamped to 0)",
+        terminal.cursor.col
     );
     println!();
 
-    // Test 4: Show debug render
-    println!("Test 4: Debug render (cursor shown as [X]):");
-    let mut terminal3 = Terminal::new(20, 3);
-    for c in "Hello, Terminal!".chars() {
-        terminal3.print(c, Attributes::default());
-    }
-    println!("{}", terminal3.debug_render());
+    // Show the final grid
+    println!("Final grid state:");
+    println!("{}", terminal.debug_render());
 
-    println!("Character printing is working correctly!");
+    println!("Cursor movement is working correctly!");
 
     Ok(())
 }
